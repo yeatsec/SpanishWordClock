@@ -9,6 +9,80 @@ extern const enum mode_t {
 	dig_month
 };
 
+extern const enum paint_t {
+  none_t,
+  time_t,
+  date_t,
+  both_t,
+  spec_t
+};
+
+extern const uint8_t mi[8] = {
+  B00000000,
+  B00000010,
+  B00000000,
+  B11110110,
+  B10101010,
+  B10101010,
+  B10101010,
+  B10101111
+};
+
+extern const uint8_t ho[8] = {
+  B00000000,
+  B10000000,
+  B10000000,
+  B10000110,
+  B11101001,
+  B10011001,
+  B10011001,
+  B10010110
+};
+
+extern const uint8_t di[8] = {
+  B00000000,
+  B00010010,
+  B00010000,
+  B00010110,
+  B01110010,
+  B10010010,
+  B10010010,
+  B01110111
+};
+
+extern const uint8_t me[8] = {
+  B00000000,
+  B00000000,
+  B00000000,
+  B11110000,
+  B10101000,
+  B10101000,
+  B10101000,
+  B10101000
+};
+
+extern const uint8_t co[8] = {
+  B00000000,
+  B00000000,
+  B00000000,
+  B01110110,
+  B10001001,
+  B10001001,
+  B10001001,
+  B01110110
+};
+
+extern const uint8_t br[8] = {
+  B00000000,
+  B10000000,
+  B10000000,
+  B10001011,
+  B11101100,
+  B10011000,
+  B10011000,
+  B11101000
+}
+
 
 /*
 * REMEMBER TO INDEX FROM 3 TO 0 (INCLUSIVE) WHEN ITERATING THROUGH BITS
@@ -115,7 +189,7 @@ extern const uint8_t dig_maps[10][8] = {
 		B0001,
 		B0001
 	}
-}
+};
 
 /*
 * REMEMBER TO INDEX FROM 7 TO 0 (INCLUSIVE) WHEN ITERATING THROUGH BITS
@@ -242,4 +316,4 @@ extern const uint8_t month_maps[12][8] = {
 		B10010010,
 		B01110111
 	}
-}
+};
