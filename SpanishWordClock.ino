@@ -8,22 +8,22 @@
  * 
  * SOFTWARE TODO
  * 
- * implement color function with brightness
- * finish logic in display_word
  * 
  */
 
 #include <Arduino.h>
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 #include <RTClib.h>
+#include "resources.h"
 
 const int delaytime = 250;
 const uint16_t NUM_LEDS = 256;
 const int8_t MAT_PIN = 6;
-uint8_t canvas[NUM_LEDS];
 
-const uint8_t num_bright_levels = 5;
-const uint8_t num_color_combinations = 3;
+CRGB leds[NUM_LEDS];
+
+const uint8_t num_bright_levels = 4;
+const uint8_t num_color_combinations = 2;
 
 uint8_t cur_sec = 0;
 uint8_t cur_min = 0;
@@ -33,13 +33,30 @@ uint8_t cur_month = 0;
 uint8_t cur_bri = 2;
 uint8_t cur_color = 0;
 
+enum paint_t {
+  none_t,
+  time_t,
+  date_t,
+  both_t,
+  spec_t
+};
 
+enum mode_t {
+  word_disp,
+  dig_disp,
+  dig_color,
+  dig_bright,
+  dig_min,
+  dig_hour,
+  dig_day,
+  dig_month
+};
 
-const int pin_mode = 6, pin_plus = 7, pin_minus = 8;
+const int pin_mode = 7, pin_plus = 8, pin_minus = 9;
 
-mode_t mode = word_disp;
+enum mode_t mode = word_disp;
+const uint8_t birth_day = 4, birth_month = 1; // February 5
 
-Adafruit_NeoPixel matrix;
 RTC_DS3231 rtc;
 const uint16_t default_year = 1997;
 
@@ -50,6 +67,7 @@ int checkInput(const int pinnum) {
 int condExecAndWait(const int pinnum, void (*f)(void), int delaytime) {
   if (checkInput(pinnum)) {
     f();
+    Serial.println("button pressed");
     delay(delaytime);
     return 1;
   }
@@ -57,7 +75,7 @@ int condExecAndWait(const int pinnum, void (*f)(void), int delaytime) {
 }
 
 void changeMode(void) {
-  mode = (mode+1)%8;
+  mode = (mode_t) ((((uint8_t) mode)+1)%8);
 }
 
 const uint8_t getMin(void) {
@@ -84,9 +102,25 @@ const uint8_t getBri(void) {
   return cur_bri;
 }
 
-// TODO - implement paint function that switches on current brightness and color
-uint32_t getPaint(uint8_t intype) {
-  return 0;
+CRGB getPaint(paint_t intype) {
+  uint8_t iy = (cur_bri+1) * 60;
+  switch(intype) {
+    case time_t:
+      return CRGB(iy, 0, 0);
+      break;
+    case date_t:
+      return CRGB(0, 0, iy);
+      break;
+    case both_t:
+      return CRGB(iy, 0, iy);
+      break;
+    case spec_t:
+      return CRGB(iy, iy, iy);
+      break;
+    default:
+      return CRGB(0,0,0); // none_t
+      break; // won't get here
+  }
 }
 
 void plus(void) {
@@ -123,12 +157,15 @@ void plus(void) {
       break;
     case dig_month: // display me top left, day and month
       nowmonth = (nowmonth+1)%12;
+      nowday = 1;
       break;
     case dig_color: // display co top left
       cur_color = (getColor()+1)%num_color_combinations;
       break;
     case dig_bright: // display br top left
-      cur_bright = (getBri()+1)%num_bright_levels;
+      if (cur_bri < num_bright_levels - 1) {
+        cur_bri = (getBri()+1)%num_bright_levels;
+      }
       break;
     default: // word_disp
       break;
@@ -178,10 +215,23 @@ void minus(void) {
       }
       break;
     case dig_month: // display me top left, day and month
+      if (nowmonth == 1) {
+        nowmonth = 12;
+      } else {
+        nowmonth = nowmonth - 1;
+      }
       break;
     case dig_color: // display co top left
+      if (dig_color == 0) {
+        cur_color = num_color_combinations-1;
+      } else {
+        cur_color = (cur_color - 1)%num_color_combinations;
+      }
       break;
     case dig_bright: // display br top left
+      if (cur_bri > 0) {
+        cur_bri = (cur_bri - 1) % num_bright_levels;
+      }
       break;
     default: // word_disp
       break;
@@ -197,18 +247,18 @@ void minus(void) {
 uint8_t matrix_decode(uint8_t row, uint8_t col) {
   if (col & 0x01) // odd col
   {
-    return col*16+row;
+    return (col*16)+(15-row);
   } else { // even col
-    return (col+1)*16-row;
+    return col*16+row;
   }
 }
 
-void paint_canvas_dig(uint8_t base_row, uint8_t base_col, uint8_t data_width, const uint8_t[] data, paint_t pa) {
+void paint_canvas_dig(uint8_t base_row, uint8_t base_col, uint8_t data_width, const uint8_t data[], paint_t pa) {
   // iterate through data
   for (uint8_t data_row = 0; data_row < 8; ++data_row) {
     for (uint8_t data_col = 0; data_col < data_width; ++data_col) {
-      if (bitRead(data[row], data_width - data_col - 1)) {
-        canvas[matrix_decode(base_row + data_row, base_col + data_col)] = pa;
+      if (bitRead(data[data_row], data_width - data_col - 1)) {
+        leds[matrix_decode(base_row + data_row, base_col + data_col)] = getPaint(pa);
       }
     }
   }
@@ -222,7 +272,7 @@ void animate(void) {
       paint_canvas_dig(0, 0, 4, dig_maps[getHour()/10], time_t); // paint tens of hour
       paint_canvas_dig(0, 4, 4, dig_maps[getHour()%10], time_t); // paint ones of hour
       paint_canvas_dig(0, 8, 4, dig_maps[getMin()/10], time_t); // paint tens of min
-      paint_canvas_dig(0, 12, 4, dig_maps[get_min()%10], time_t); // paint ones of min
+      paint_canvas_dig(0, 12, 4, dig_maps[getMin()%10], time_t); // paint ones of min
       paint_canvas_dig(8, 0, 4, dig_maps[getDay()/10], date_t); // paint tens of day
       paint_canvas_dig(8, 4, 4, dig_maps[getDay()%10], date_t); // paint ones of day
       paint_canvas_dig(8, 8, 8, month_maps[cur_month], date_t); // paint month
@@ -264,16 +314,17 @@ void animate(void) {
 void paint_canvas_word(uint8_t base_row, uint8_t base_col, uint8_t len, paint_t pa, bool alongCol=false) {
   if (!alongCol) {
     for (uint8_t col = base_col; col < base_col + len; ++col) {
-      canvas(matrix_decode(base_row, col)] = pa;
+      leds[matrix_decode(base_row, col)] = getPaint(pa);
     }
   } else {
     for (uint8_t row = base_row; row < base_row + len; ++row) {
-      canvas(matrix_decode(row, base_col)] = pa;
+      leds[matrix_decode(row, base_col)] = getPaint(pa);
     }
   }
 }
 
 void display_word(void) {
+  
   uint8_t disp_hour = cur_hour;
   if (cur_min >= 45) {
     ++disp_hour; // will be using 'menos'
@@ -283,7 +334,7 @@ void display_word(void) {
   }
   
   // check for special message time
-  if (cur_hour == random_hour[cur_month][cur_day] && cur_min == random_min[cur_month][cur_day]) {
+  if (cur_hour == rand_hours[cur_day] && cur_min == rand_minutes[cur_day]) {
     paint_canvas_word(0, 8, 1, time_t); // e
     paint_canvas_word(0, 12, 1, time_t); // r
     paint_canvas_word(0, 15, 1, time_t); // e
@@ -294,10 +345,6 @@ void display_word(void) {
     paint_canvas_word(12, 5, 1, date_t); // d
     paint_canvas_word(14, 9, 1, date_t); // a // i should change this to guapa --> will do
     return;
-  }
-  if (cur_month == birth_month && cur_day == birth_day) {
-    paint_canvas_word(1, 0, 5, spec_t, true); // FELIZ
-    paint_canvas_word(3, 15, 10, spec_t, true); // CUMPLEANOS
   }
   // paint canvas with WORDS
   // switch on second for lighting up either hola or audri
@@ -358,7 +405,8 @@ void display_word(void) {
       break;
   }
   // de la
-  paint_canvas_word(9, 12, 4, time_t); // DELA
+  paint_canvas_word(9, 12, 2, both_t); // DE
+  paint_canvas_word(9, 14, 2, time_t); // LA
   if (disp_hour < 12) {
     paint_canvas_word(14, 10, 6, time_t); // MANANA
   } else if (disp_hour < 18) {
@@ -382,20 +430,26 @@ void display_word(void) {
   paint_canvas_word(0, 9, 3, date_t); // HOY
   paint_canvas_word(0, 13, 2, date_t); // ES
   paint_canvas_word(1, 1, 2, date_t); // EL
-  paint_t shared = (cur_day == disp_hour%12) ? date_t : both_t;
+  paint_t shared = (cur_day == disp_hour%12) ? both_t : date_t;
   if ((getDay() >= 10 && getDay() <= 15) || getDay() == 20) {
     switch (getDay()) {
       case 10:
+        paint_canvas_word(7, 0, 4, shared); // DIEZ
         break;
       case 11:
+        paint_canvas_word(7, 5, 4, shared); // ONCE
         break;
       case 12:
+        paint_canvas_word(8, 0, 4, shared); // DOCE
         break;
       case 13:
+        paint_canvas_word(8, 11, 5, date_t); // TRECE
         break;
       case 14: 
+        paint_canvas_word(3, 8, 7, date_t); // CATORCE
         break;
       case 20:
+        paint_canvas_word(7, 9, 6, date_t); // QUINCE
         break;
       default:
         break;
@@ -403,10 +457,16 @@ void display_word(void) {
   } else {
     switch (getDay()/10) {
       case 1: // DIECI
+        paint_canvas_word(1, 5, 5, date_t); // DIECI
         break;
       case 2: // VEINTI
+        paint_canvas_word(1, 10, 6, date_t); // VEINTI
         break;
       case 3: // TREINTA // do some logic for 'Y'
+        paint_canvas_word(2, 1, 7, date_t); // TREINTA
+        if (getDay() == 31) {
+          paint_canvas_word(3, 4, 1, date_t); // Y
+        }
         break;
       default:
         break;
@@ -445,48 +505,97 @@ void display_word(void) {
   }
   
   // switch on month for de ?mes
-  
+  switch(cur_month) {
+    case 0:
+      paint_canvas_word(10, 0, 5, date_t); // ENERO
+      break;
+    case 1:
+      paint_canvas_word(11, 0, 7, date_t); // FEBRERO
+      break;
+    case 2:
+      paint_canvas_word(11, 7, 5, date_t); // MARZO
+      break;
+    case 3:
+      paint_canvas_word(10, 5, 5, date_t); // ABRIL
+      break;
+    case 4:
+      paint_canvas_word(11, 12, 4, date_t); // MAYO
+      break;
+    case 5:
+      paint_canvas_word(10, 10, 5, date_t); // JUNIO
+      break;
+    case 6:
+      paint_canvas_word(15, 0, 5, date_t); // JULIO
+      break;
+    case 7:
+      paint_canvas_word(13, 0, 6, date_t); // AGOSTO
+      break;
+    case 8:
+      paint_canvas_word(13, 6, 10, date_t); // SEPTIEMBRE
+      break;
+    case 9:
+      paint_canvas_word(15, 4, 7, date_t); // OCTUBRE
+      break;
+    case 10:
+      paint_canvas_word(14, 0, 9, date_t); // NOVIEMBRE
+      break;
+    case 11:
+      paint_canvas_word(12, 6, 9, date_t); // DECIEMBRE
+      break;
+    default:
+      break;
+  }
+
+  // birthday!!
+  if (cur_month == birth_month && cur_day == birth_day) {
+    paint_canvas_word(1, 0, 5, spec_t, true); // FELIZ
+    paint_canvas_word(3, 15, 10, spec_t, true); // CUMPLEANOS
+  }
 }
 
 void setup() {
+  Serial.begin(9600);
   // set up matrix with 256 LEDS on pin 6; GRB layout and 800kHz
-  matrix = Adafruit_NeoPixel(NUM_LEDS, MAT_PIN, NEO_GRB + NEO_KHZ800);
+  FastLED.addLeds<NEOPIXEL, MAT_PIN>(leds, NUM_LEDS);
   pinMode(pin_mode, INPUT);
   pinMode(pin_plus, INPUT);
   pinMode(pin_minus, INPUT);
 
   if (!rtc.begin()) {
-    paint_canvas_dig(0, 0, 8, err, spec_t);
+    paint_canvas_word(0, 3, 5, spec_t); // AUDRI
+    FastLED.show();
     while(1);
   }
   if (rtc.lostPower()) {
-    rtc.adjust(DateTime(default_year, cur_month, cur_day, cur_hour, cur_min, 0));
+    rtc.adjust(DateTime(default_year, cur_month+1, cur_day+1, cur_hour, cur_min, 0));
   }
-  matrix.begin();
+
+  Serial.println("Finished Setup");
 }
 
 void loop() {
+  Serial.println("loop");
   // update time
-  nowtime = rtc.now()
-  cur_month = nowtime.month();
-  cur_day = nowtime.day();
+  DateTime nowtime = rtc.now();
+  cur_month = nowtime.month() - 1;
+  cur_day = nowtime.day() - 1;
   cur_hour = nowtime.hour();
   cur_min = nowtime.minute();
   cur_sec = nowtime.second();
+  
   // check if button is pressed
   condExecAndWait(pin_mode, changeMode, delaytime);
-  condExecAndWait(pin_plus, changeMode, delaytime);
-  condExecAndWait(pin_minus, changeMode, delaytime);
+  condExecAndWait(pin_plus, plus, delaytime);
+  condExecAndWait(pin_minus, minus, delaytime);
+  
   // clear canvas
-  for (uint8_t i = 0; i < NUM_LEDS; ++i) {
-    canvas[i] = 0;
+  for (uint16_t i = 0; i < NUM_LEDS; ++i) {
+    leds[i] = getPaint(none_t);
   }
+  
   // draw on canvas
   animate();
-  // translate canvas
-  for (uint16_t i = 0; i < NUM_LEDS; ++i) {
-    matrix.setPixelColor(i, getPaint(canvas[i]));
-  }
-  matrix.show();
-  delay(100);
+
+  // show canvas
+  FastLED.show();
 }
