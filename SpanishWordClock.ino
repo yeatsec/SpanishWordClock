@@ -18,7 +18,7 @@
 
 const int delaytime = 250;
 const uint16_t NUM_LEDS = 256;
-const int8_t MAT_PIN = 6;
+const int8_t MAT_PIN = 3;
 
 CRGB leds[NUM_LEDS];
 
@@ -54,7 +54,7 @@ enum mode_t {
 
 const uint8_t days_in_months[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
-const int pin_mode = 7, pin_plus = 8, pin_minus = 9;
+const int pin_mode = 7, pin_plus = 8, pin_minus = 9, pin_high1 = 13, pin_high2 = 4;
 
 enum mode_t mode = word_disp;
 const uint8_t birth_day = 4, birth_month = 1; // February 5
@@ -544,6 +544,11 @@ void setup() {
   pinMode(pin_mode, INPUT);
   pinMode(pin_plus, INPUT);
   pinMode(pin_minus, INPUT);
+  pinMode(pin_high1, OUTPUT);
+  pinMode(pin_high2, OUTPUT);
+
+  digitalWrite(pin_high1, HIGH);
+  digitalWrite(pin_high2, HIGH);
 
   if (!rtc.begin()) {
     paint_canvas_word(0, 3, 5, spec_t); // AUDRI
