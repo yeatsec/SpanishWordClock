@@ -22,7 +22,7 @@ const int8_t MAT_PIN = 6;
 
 CRGB leds[NUM_LEDS];
 
-const uint8_t num_bright_levels = 4;
+const uint8_t num_bright_levels = 10;
 const uint8_t num_color_combinations = 2;
 
 uint8_t cur_sec = 0;
@@ -30,7 +30,7 @@ uint8_t cur_min = 0;
 uint8_t cur_hour = 0;
 uint8_t cur_day = 0;
 uint8_t cur_month = 0;
-uint8_t cur_bri = 2;
+uint8_t cur_bri = 1;
 uint8_t cur_color = 0;
 
 enum paint_t {
@@ -52,6 +52,8 @@ enum mode_t {
   dig_month
 };
 
+const uint8_t days_in_months[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
 const int pin_mode = 7, pin_plus = 8, pin_minus = 9;
 
 enum mode_t mode = word_disp;
@@ -67,7 +69,6 @@ int checkInput(const int pinnum) {
 int condExecAndWait(const int pinnum, void (*f)(void), int delaytime) {
   if (checkInput(pinnum)) {
     f();
-    Serial.println("button pressed");
     delay(delaytime);
     return 1;
   }
@@ -103,16 +104,16 @@ const uint8_t getBri(void) {
 }
 
 CRGB getPaint(paint_t intype) {
-  uint8_t iy = (cur_bri+1) * 60;
+  uint8_t iy = (cur_bri+1) * 10;
   switch(intype) {
     case time_t:
-      return CRGB(iy, 0, 0);
+      return (!cur_color) ? CRGB(iy, 0, iy) : CRGB(iy, 0, 0);
       break;
     case date_t:
-      return CRGB(0, 0, iy);
+      return (!cur_color) ? CRGB(0, iy, iy) : CRGB(0, 0, iy);
       break;
     case both_t:
-      return CRGB(iy, 0, iy);
+      return (!cur_color) ? CRGB(0, 0, iy) : CRGB(iy, 0, iy);
       break;
     case spec_t:
       return CRGB(iy, iy, iy);
@@ -125,7 +126,7 @@ CRGB getPaint(paint_t intype) {
 
 void plus(void) {
   DateTime current = rtc.now();
-
+  uint8_t nowsec = current.second();
   uint8_t nowmin = current.minute();
   uint8_t nowhour = current.hour();
   uint8_t nowday = current.day();
@@ -140,24 +141,14 @@ void plus(void) {
       nowhour = (nowhour+1)%24;
       break;
     case dig_day: // display di
-      switch (getMonth()) {
-        case 1: // february
-          nowday = (nowday+1)%28;
-          break;
-         case 3:
-         case 5:
-         case 8:
-         case 10:
-          nowday = (nowday+1)%30;
-          break;
-        default:
-          nowday = (nowday+1)%31;
-          break;
-      }
+      nowday = (nowday+1)%days_in_months[cur_month];
+      if (!nowday) nowday = 1;
       break;
     case dig_month: // display me top left, day and month
       nowmonth = (nowmonth+1)%12;
-      nowday = 1;
+      if (nowday > days_in_months[nowmonth-1]) {
+        nowday = days_in_months[nowmonth-1];
+      }
       break;
     case dig_color: // display co top left
       cur_color = (getColor()+1)%num_color_combinations;
@@ -171,12 +162,12 @@ void plus(void) {
       break;
   }
   // set new time
-  rtc.adjust(DateTime(default_year, nowmonth, nowday, nowhour, nowmin, 0));
+  rtc.adjust(DateTime(default_year, nowmonth, nowday, nowhour, nowmin, nowsec));
 }
 
 void minus(void) {
   DateTime current = rtc.now();
-
+  uint8_t nowsec = current.second();
   uint8_t nowmin = current.minute();
   uint8_t nowhour = current.hour();
   uint8_t nowday = current.day();
@@ -199,19 +190,10 @@ void minus(void) {
       }
       break;
     case dig_day: // display di
-      switch (cur_month) {
-        case 1: // february
-          nowday = (nowday+1)%28;
-          break;
-         case 3:
-         case 5:
-         case 8:
-         case 10:
-          nowday = (nowday+1)%30;
-          break;
-        default:
-          nowday = (nowday+1)%31;
-          break;
+      if (nowday == 1) {
+        nowday = days_in_months[cur_month];
+      } else {
+        nowday = (nowday - 1)%days_in_months[cur_month];
       }
       break;
     case dig_month: // display me top left, day and month
@@ -219,6 +201,9 @@ void minus(void) {
         nowmonth = 12;
       } else {
         nowmonth = nowmonth - 1;
+      }
+      if (nowday > days_in_months[nowmonth-1]) {
+        nowday = days_in_months[nowmonth-1];
       }
       break;
     case dig_color: // display co top left
@@ -236,7 +221,7 @@ void minus(void) {
     default: // word_disp
       break;
   }
-  rtc.adjust(DateTime(default_year, nowmonth, nowday, nowhour, nowmin, 0));
+  rtc.adjust(DateTime(default_year, nowmonth, nowday, nowhour, nowmin, nowsec));
 }
 
 // converts row, col format to LED strip format  with 0 based indexing of row and col
@@ -375,7 +360,7 @@ void display_word(void) {
       paint_canvas_word(5, 12, 3, time_t); // DOS
       break;
     case 3:
-      paint_canvas_word(5, 5, 3, time_t); // TRES
+      paint_canvas_word(5, 5, 4, time_t); // TRES
       break;
     case 4:
       paint_canvas_word(4, 1, 6, time_t); // CUATRO
@@ -418,13 +403,13 @@ void display_word(void) {
   if (cur_min >= 45) {
     // MENOS CUARTO
     paint_canvas_word(8, 6, 5, time_t); // MENOS
-    paint_canvas_word(9, 5, 5, time_t); // CUARTO
+    paint_canvas_word(9, 5, 6, time_t); // CUARTO
   } else if (cur_min >= 30) {
     paint_canvas_word(8, 5, 1, time_t); // Y
     paint_canvas_word(9, 0, 5, time_t); // MEDIA
   } else if (cur_min >= 15) {
     paint_canvas_word(8, 5, 1, time_t); // Y
-    paint_canvas_word(9, 5, 5, time_t); // CUARTO
+    paint_canvas_word(9, 5, 6, time_t); // CUARTO
   }
   // switch on day for hoy es el ?dia
   paint_canvas_word(0, 9, 3, date_t); // HOY
@@ -479,7 +464,7 @@ void display_word(void) {
         paint_canvas_word(5, 12, 3, shared); // DOS
         break;
       case 3:
-        paint_canvas_word(5, 5, 3, shared); // TRES
+        paint_canvas_word(5, 5, 4, shared); // TRES
         break;
       case 4:
         paint_canvas_word(4, 1, 6, shared); // CUATRO
@@ -554,7 +539,6 @@ void display_word(void) {
 }
 
 void setup() {
-  Serial.begin(9600);
   // set up matrix with 256 LEDS on pin 6; GRB layout and 800kHz
   FastLED.addLeds<NEOPIXEL, MAT_PIN>(leds, NUM_LEDS);
   pinMode(pin_mode, INPUT);
@@ -570,11 +554,9 @@ void setup() {
     rtc.adjust(DateTime(default_year, cur_month+1, cur_day+1, cur_hour, cur_min, 0));
   }
 
-  Serial.println("Finished Setup");
 }
 
 void loop() {
-  Serial.println("loop");
   // update time
   DateTime nowtime = rtc.now();
   cur_month = nowtime.month() - 1;
